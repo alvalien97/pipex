@@ -1,0 +1,106 @@
+//he comentado el suiguiente programa y me gustaria saber si lo he comentado bien, si no dime en que me he equivocado
+
+int main(int argc, char **argv, char **envp)
+{
+    int fd[2]; //declaro la entrada y salida estandar de mi programa, creando un pipe que hace lectura y escritura
+    pid_t   pid1; //declaro el pid que representa la id de un proceso, concretamente del fork.
+
+    if (argc == 5) //si el numero de argumentos es 5 corro el programa
+    {
+        if (pipe(fd) == -1) //creo un pipe de fd que si es -1 me salta el error
+        	error();
+        pid1 = fork(); //creo un proceso hijo
+        if (pid1 == -1) //si el proceso hijo se creo mal me das error
+            error();
+        if (pid1 == 0) // si el proceso hijo esta bien pues haces lo siguiente
+            child_process (argv, envp, fd); //Llamo a la funcion redirigiendo su salida al pipe
+        waitpid (pid1, NULL, 0); //la funcion espera a que termine pid1, NULL porq no me importa cuanto tardes, 0 no me importa que me devuelvas
+        parent_process (argv, envp, fd);
+    }
+    else //sino me das error y me lo imprimes por la salida 2 que creo que es el outputfile.txt
+        ft_putstr_fd("Error", 2);
+    return (0);
+}
+
+void    child_process (char **argv, char **envp, int *fd) //venimos desde el main
+{
+    int filein; //aqui voy a escribir sobre el inputfile.txt
+
+    filein = open(argv[1], O_RDONLY); //Me abres el inputfile solo en lectura
+    if (filein == -1) //si hay error sales con la funcion error
+        error();
+    dup2 (fd[1], STDOUT_FILENO); //Redirige salida al pipe (outpufile.txt), lo que este proceso escriba va al extremo de escritura del pipe
+    dup2 (filein, STDIN_FILENO); //La entrada del comando sera el archivo
+    close (fd[0]); //cierro el extremo de lectura de mi pipe
+    execute (argv[2], envp); // ejecuitas el comando en base al PATH
+}
+
+void    parent_process (char **argv, char **envp, int *fd)
+{
+    int fileout; //aqui esta la salida
+    
+    fileout = open(argv[4], O_WRONLY | O_CREAT | O_TRUNC, 0644); //me abres el archivo de salida, 0644 da permisos
+    if (fileout == -1) //esto por si hay error
+        error();
+    dup2 (fd[0], STDIN_FILENO); // Redirige stdin al extremo de lectura del pipe: leerá lo que el primer proceso escribió.
+    dup2 (fileout, STDOUT_FILENO); //en pase a lo que he leido en el pipe de entrada escribire una salida
+    close (fd[1]); //me cierras el extremo de escritura
+    execute (argv[3], envp); //ejecutas el comando en base al PATH
+}
+
+char    *find_path (char *cmd, char **envp) //busca en el entorno envp la variable PATH que contiene directorios con comandos como grep, ls, cat, ...
+// Luego, reconstruir el comando cmd del PATH y verificar si existe esa ruta
+{
+    char    **paths; //Array de directorios de path
+    char    *path; // Cadena temporal/auxiliar que almacenará una ruta ("/usr/bin/ls").
+    int     i;
+    char    *part_path; // Cadena que contiene el directorio con una '/' al final (ej: "/usr/bin/").
+
+    i = 0;
+    while (ft_strnstr(envp[i], "PATH", 4) == 0) // busca en envp la variable que empieza por PATH
+        i++;
+    paths = ft_split(envp[i] + 5, ':'); //en paths ahora tenemos la ruta sin la varfiable PATH
+    i = 0;
+    while (paths[i]) //si exitste path de i
+    {
+        part_path = ft_strjoin (paths[i], "/"); //a path en i le añade un / al final
+        path = ft_strjoin (part_path, cmd); //añde a path en i el comando cmd que introducimos por terminal
+        free (part_path); //libera parth_path
+        if (access(path, F_OK) == 0) //si existe la ruta del path ok y sigues
+            return (path);
+        free (path); //libero el path porque si no lo he devuelto es que hay error
+        i++; salto al siguiente array del directorio PATH o sino salgo del while
+
+    }
+    i = -1;
+    while (paths[++i])
+        free (paths[i]); //liberas la memoria de paths en i para que no haya basura
+    free (paths); //Esto se libera en caso de que la ruta no exista para que no quede basura
+    return (0);
+}
+
+void    error (void) //funcion de error bastante sencilla
+{
+    perror ("Error");
+    exit (EXIT_FAILURE);
+}
+
+void execute (char *argv, char **envp)
+{
+    char **cmd; //contiene el comando: cmd[0] = ls, cmd [1] = -l, ...
+    int i;
+    char *path; //la ruta completa del ejecutable
+
+    i = -1;
+    cmd = ft_split (argv, ' '); //divide el argv (comando) en espacios
+    path = find_path (cmd[0], envp); //buscamos por ejemplo ls dentro del path
+    if (!path) //si no encuentras el path libera el comando
+    {
+        while (cmd[++i])
+            free (cmd[i]);
+        free (cmd);
+        error();
+    }
+    if (execve (path, cmd, envp) == -1)
+        error();
+}
